@@ -420,6 +420,68 @@ input[type="file"] { display: none; }
 }
 .dispute-submit:hover { background: #78330B; }
 
+/* ── Billing errors card ─────────────────────────────────────── */
+.errors-card {
+  background: var(--surface);
+  border-radius: 22px;
+  border: 1.5px solid #F97316;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.errors-card-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.errors-card-icon { font-size: 20px; }
+.errors-card-title { font-size: 15px; font-weight: 600; flex: 1; }
+.errors-badge {
+  background: #F97316; color: #fff;
+  font-size: 11px; font-weight: 700;
+  padding: 2px 9px; border-radius: 20px;
+}
+.error-item {
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.error-item:last-child { border-bottom: none; }
+.error-item-top { display: flex; align-items: center; gap-8; margin-bottom: 4px; }
+.error-severity {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 8px; margin-right: 8px;
+}
+.sev-high   { background: #FEE2E2; color: #DC2626; }
+.sev-medium { background: #FEF3C7; color: #D97706; }
+.sev-low    { background: #DCFCE7; color: #16A34A; }
+.error-title { font-size: 13px; font-weight: 600; }
+.error-desc  { font-size: 12px; color: var(--text2); line-height: 1.5; margin-top: 3px; }
+.error-overcharge { font-size: 12px; color: #16A34A; font-weight: 600; margin-top: 4px; }
+.errors-no-errors {
+  padding: 18px 22px;
+  font-size: 13px; color: var(--text2);
+  display: flex; align-items: center; gap: 8px;
+}
+.dispute-letter-btn {
+  display: block; width: calc(100% - 44px); margin: 0 22px 16px;
+  background: #FFF7ED; color: #C2410C;
+  border: 1px solid #F97316; border-radius: 12px;
+  padding: 10px; font-size: 13px; font-weight: 600;
+  cursor: pointer; text-align: center;
+}
+.dispute-letter-btn:hover { background: #FFEDD5; }
+.dispute-letter-output {
+  margin: 0 22px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  color: var(--text1);
+  display: none;
+}
+
 .history-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .history-top h2 { font-size: 22px; font-weight: 500; }
 
@@ -602,6 +664,20 @@ input[type="file"] { display: none; }
     <div class="line-items-card">
       <div class="section-label">Charge breakdown</div>
       <div id="r-lineitems"></div>
+    </div>
+
+    <!-- Billing error detection card -->
+    <div class="errors-card" id="errorsCard" style="display:none">
+      <div class="errors-card-header">
+        <span class="errors-card-icon">⚠️</span>
+        <span class="errors-card-title">Potential Billing Issues</span>
+        <span class="errors-badge" id="errorsBadge">0</span>
+      </div>
+      <div id="errorsList"></div>
+      <button class="dispute-letter-btn" id="disputeLetterBtn" onclick="generateDisputeLetter()" style="display:none">
+        ✉️ Generate dispute letter for these errors
+      </button>
+      <div class="dispute-letter-output" id="disputeLetterOutput"></div>
     </div>
 
     <div class="card">
@@ -831,6 +907,7 @@ async function parseBillWithAPI(rawText) {
       account:     data.account        ?? 'N/A',
       lineItems:   (data.lineItems     || []).slice(0, 8),
       confidence:  data.confidence     ?? 50,
+      billingErrors: (data.billingErrors || []),
       rawText:     rawText.slice(0, 3000),
     };
   } catch(e) {
@@ -890,7 +967,8 @@ function buildBillObject(parsed, filename) {
     dueDate: parsed.dueDate, account: parsed.account,
     amount: parsed.amount, billed: parsed.billed, covered: parsed.covered,
     status, note, confidence: parsed.confidence,
-    lineItems: parsed.lineItems, rawText: parsed.rawText,
+    lineItems: parsed.lineItems, billingErrors: parsed.billingErrors || [],
+    rawText: parsed.rawText,
     filename: filename || 'bill', scannedAt: new Date().toISOString(), emoji: '🏥',
   };
 }
@@ -955,6 +1033,100 @@ function renderResults(b) {
   document.getElementById('planPanel').classList.remove('show');
   document.getElementById('disputePanel').classList.remove('show');
   activePanel = null;
+  renderErrors(b);
+}
+
+/* ── Billing error detection ─────────────────────────────────────────────── */
+function renderErrors(b) {
+  const card = document.getElementById('errorsCard');
+  const list = document.getElementById('errorsList');
+  const badge = document.getElementById('errorsBadge');
+  const letterBtn = document.getElementById('disputeLetterBtn');
+  const letterOut = document.getElementById('disputeLetterOutput');
+
+  // Reset
+  letterOut.style.display = 'none';
+  letterOut.textContent = '';
+
+  const errors = b.billingErrors || [];
+
+  if (errors.length === 0) {
+    card.style.display = 'block';
+    badge.style.background = '#16A34A';
+    badge.textContent = '✓ Clean';
+    list.innerHTML = `<div class="errors-no-errors">✅ No obvious billing errors detected. Always review your Explanation of Benefits (EOB) from your insurer to double-check.</div>`;
+    letterBtn.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  badge.textContent = errors.length + ' issue' + (errors.length > 1 ? 's' : '');
+
+  const highCount = errors.filter(e => e.severity === 'high').length;
+  if (highCount > 0) badge.style.background = '#DC2626';
+  else badge.style.background = '#D97706';
+
+  list.innerHTML = errors.map(e => {
+    const sevClass = 'sev-' + (e.severity || 'low');
+    const sevLabel = (e.severity || 'low').toUpperCase();
+    const overcharge = e.estimatedOvercharge
+      ? `<div class="error-overcharge">💰 Potential overcharge: $${e.estimatedOvercharge.toFixed(2)}</div>`
+      : '';
+    const code = e.lineItemCode ? ` <span style="font-size:11px;color:var(--text2)">(${e.lineItemCode})</span>` : '';
+    return `
+      <div class="error-item">
+        <div class="error-item-top">
+          <span class="error-severity ${sevClass}">${sevLabel}</span>
+          <span class="error-title">${e.title}${code}</span>
+        </div>
+        <div class="error-desc">${e.description}</div>
+        ${overcharge}
+      </div>`;
+  }).join('');
+
+  letterBtn.style.display = 'block';
+}
+
+async function generateDisputeLetter() {
+  const btn = document.getElementById('disputeLetterBtn');
+  const out = document.getElementById('disputeLetterOutput');
+  const b = currentBill;
+  if (!b) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Generating letter…';
+
+  const errorSummary = (b.billingErrors || []).map(e =>
+    `- ${e.title}: ${e.description}${e.estimatedOvercharge ? ' (estimated overcharge: $' + e.estimatedOvercharge.toFixed(2) + ')' : ''}`
+  ).join('\n');
+
+  try {
+    const res = await fetch('/api/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bill: {
+          provider: b.provider,
+          amount: b.amount,
+          billed: b.billed,
+          serviceDate: b.serviceDate,
+          account: b.account,
+        },
+        mode: 'dispute_letter',
+        errorSummary,
+      }),
+    });
+    const data = await res.json();
+    const text = data.content || data.text || data.explanation || 'Could not generate letter.';
+    out.textContent = text;
+    out.style.display = 'block';
+  } catch(e) {
+    out.textContent = 'Error generating letter. Try again.';
+    out.style.display = 'block';
+  }
+
+  btn.disabled = false;
+  btn.textContent = '✉️ Generate dispute letter for these errors';
 }
 
 function buildExplanation(b) {
@@ -1104,6 +1276,24 @@ function loadDemo() {
     ],
     rawText: 'demo',
     scannedAt: new Date().toISOString(),
+    billingErrors: [
+      {
+        type: 'duplicate',
+        severity: 'high',
+        title: 'Possible duplicate charge: CBC blood test',
+        description: 'CPT code 85025 (Complete Blood Count) appears to be billed twice in this visit. Labs drawn during an ER stay are typically included in the facility fee — you may be paying for it twice.',
+        lineItemCode: '85025',
+        estimatedOvercharge: 380.00,
+      },
+      {
+        type: 'upcoding',
+        severity: 'medium',
+        title: 'ER visit coded at highest complexity level',
+        description: 'CPT 99285 is the most expensive ER visit code and is typically reserved for life-threatening cases. If your visit was routine (e.g. minor injury, non-emergency), this may have been upcoded. Worth requesting documentation that justifies this level.',
+        lineItemCode: '99285',
+        estimatedOvercharge: null,
+      },
+    ],
   };
   showProcessingFake(demo);
 }
