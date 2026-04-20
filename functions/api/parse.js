@@ -1,21 +1,22 @@
-import fetch from 'node-fetch';
-
-export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-
-  const OPENROUTER_KEY   = process.env.OPENROUTER_KEY;
-  const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
+export async function onRequestPost({ request, env }) {
+  const OPENROUTER_KEY   = env.OPENROUTER_KEY;
+  const OPENROUTER_MODEL = env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
   const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions';
 
-  if (!OPENROUTER_KEY) return res.status(503).json({ error: 'OPENROUTER_KEY not configured' });
+  if (!OPENROUTER_KEY) {
+    return Response.json({ error: 'OPENROUTER_KEY not configured' }, { status: 503 });
+  }
 
-  const rawText = (req.body?.text || '').slice(0, 4000);
+  let body;
+  try { body = await request.json(); }
+  catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }); }
+
+  const rawText = (body.text || '').slice(0, 4000);
 
   const prompt = `You are a medical billing expert and patient advocate. Extract structured data from this medical bill OCR text AND flag potential billing errors.
 
 Return ONLY valid JSON, no explanation, no markdown, no backticks. Just the raw JSON object.
 
-Extract these fields exactly:
 {
   "provider": "hospital or clinic name, or null",
   "serviceDate": "date of service as string, or null",
@@ -53,7 +54,7 @@ Bill text:
 ${rawText}`;
 
   try {
-    const apiRes = await fetch(OPENROUTER_URL, {
+    const res = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -69,13 +70,17 @@ ${rawText}`;
       }),
     });
 
-    const data = await apiRes.json();
+    if (!res.ok) {
+      const errText = await res.text();
+      return Response.json({ error: 'LLM error: ' + res.status, detail: errText }, { status: 502 });
+    }
+
+    const data = await res.json();
     const text = data.choices?.[0]?.message?.content || '';
     const clean = text.replace(/```json|```/gi, '').trim();
     const parsed = JSON.parse(clean);
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json(parsed);
+    return Response.json(parsed, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) {
-    return res.status(500).json({ error: String(e) });
+    return Response.json({ error: String(e) }, { status: 500 });
   }
 }
