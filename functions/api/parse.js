@@ -1,27 +1,17 @@
-/**
- * POST /api/parse
- * Body: { text: string }
- * Proxies bill OCR text to OpenRouter. API key stays server-side.
- */
-export async function onRequestPost({ request, env }) {
-  const OPENROUTER_KEY   = env.OPENROUTER_KEY;
-  const OPENROUTER_MODEL = env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
+import fetch from 'node-fetch';
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const OPENROUTER_KEY   = process.env.OPENROUTER_KEY;
+  const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
   const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions';
 
-  if (!OPENROUTER_KEY) {
-    return Response.json({ error: 'OPENROUTER_KEY not configured' }, { status: 503 });
-  }
+  if (!OPENROUTER_KEY) return res.status(503).json({ error: 'OPENROUTER_KEY not configured' });
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
+  const rawText = (req.body?.text || '').slice(0, 4000);
 
-  const rawText = (body.text || '').slice(0, 4000);
-
-  const prompt = `You are a medical billing expert. Extract structured data from this medical bill OCR text.
+  const prompt = `You are a medical billing expert and patient advocate. Extract structured data from this medical bill OCR text AND flag potential billing errors.
 
 Return ONLY valid JSON, no explanation, no markdown, no backticks. Just the raw JSON object.
 
@@ -37,7 +27,17 @@ Extract these fields exactly:
   "lineItems": [
     { "code": "CPT code or empty string", "desc": "plain English description", "amount": number }
   ],
-  "confidence": number between 0 and 100
+  "confidence": number between 0 and 100,
+  "billingErrors": [
+    {
+      "type": "duplicate|upcoding|unbundling|missing_adjustment|suspicious_amount|other",
+      "severity": "high|medium|low",
+      "title": "short human-readable title",
+      "description": "1-2 sentence plain English explanation of why this looks wrong",
+      "lineItemCode": "CPT code if applicable, or null",
+      "estimatedOvercharge": number or null
+    }
+  ]
 }
 
 Rules:
@@ -45,15 +45,15 @@ Rules:
 - totalBilled = full amount before insurance
 - insurancePaid = what insurance covered
 - All dollar amounts must be numbers, not strings. No $ signs.
-- If a field is not clearly present in the text, use null
-- confidence: 90+ if all key fields found, 70-89 if most found, 40-69 if some found, below 40 if text is mostly unreadable
-- lineItems: only include if CPT codes or itemized charges are visible
+- billingErrors: check for duplicate charges, upcoding, unbundling, missing adjustments, suspicious round-number amounts
+- If no billing errors found, return billingErrors as empty array []
+- Only flag issues you can reasonably infer from the text
 
 Bill text:
 ${rawText}`;
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const apiRes = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -64,25 +64,18 @@ ${rawText}`;
       body: JSON.stringify({
         model: OPENROUTER_MODEL,
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 1000,
+        max_tokens: 1500,
         temperature: 0.1,
       }),
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return Response.json({ error: 'LLM error: ' + res.status, detail: errText }, { status: 502 });
-    }
-
-    const data = await res.json();
+    const data = await apiRes.json();
     const text = data.choices?.[0]?.message?.content || '';
     const clean = text.replace(/```json|```/gi, '').trim();
     const parsed = JSON.parse(clean);
-
-    return Response.json(parsed, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json(parsed);
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return res.status(500).json({ error: String(e) });
   }
 }
