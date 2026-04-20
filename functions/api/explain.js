@@ -1,25 +1,20 @@
 /**
- * POST /api/explain
- * Body: { provider, serviceDate, billed, covered, amount, lineItems }
- * Returns a friendly plain-English explanation of the bill.
+ * Vercel Serverless Function: POST /api/explain
+ * Returns a friendly plain-English AI explanation of the bill.
  */
-export async function onRequestPost({ request, env }) {
-  const OPENROUTER_KEY   = env.OPENROUTER_KEY;
-  const OPENROUTER_MODEL = env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
-  const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions';
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const OPENROUTER_KEY   = process.env.OPENROUTER_KEY;
+  const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
 
   if (!OPENROUTER_KEY) {
-    return Response.json({ error: 'OPENROUTER_KEY not configured' }, { status: 503 });
+    return res.status(503).json({ error: 'OPENROUTER_KEY not configured' });
   }
 
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
-  }
-
-  const { provider, serviceDate, billed, covered, amount, lineItems } = body;
+  const { provider, serviceDate, billed, covered, amount, lineItems } = req.body || {};
   const chargesSummary = Array.isArray(lineItems) && lineItems.length
     ? lineItems.map(l => `${l.desc} ($${(l.amount || 0).toFixed(2)})`).join(', ')
     : 'not itemized';
@@ -42,7 +37,7 @@ Write exactly 3 short paragraphs:
 No jargon. No bullet points. Just plain friendly paragraphs. Be warm and calm.`;
 
   try {
-    const res = await fetch(OPENROUTER_URL, {
+    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -58,18 +53,19 @@ No jargon. No bullet points. Just plain friendly paragraphs. Be warm and calm.`;
       }),
     });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return Response.json({ error: 'LLM error: ' + res.status, detail: errText }, { status: 502 });
+    if (!upstream.ok) {
+      const errText = await upstream.text();
+      return res.status(502).json({ error: 'LLM error: ' + upstream.status, detail: errText });
     }
 
-    const data = await res.json();
+    const data = await upstream.json();
     const text = data.choices?.[0]?.message?.content || 'No response received.';
 
-    return Response.json({ text }, {
-      headers: { 'Cache-Control': 'no-store' },
-    });
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ text });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
+    return res.status(500).json({ error: String(e) });
   }
 }
+
+export const config = { api: { bodyParser: { sizeLimit: '512kb' } } };
