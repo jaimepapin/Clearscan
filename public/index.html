@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClearScan — Medical Bill Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #F5F2EC;
+  --surface:     #FFFFFF;
+  --surface2:    #F0EDE6;
+  --surface3:    #E8E4DC;
+  --text:        #1C1A16;
+  --text2:       #6B6760;
+  --text3:       #9E9B96;
+  --border:      rgba(28,26,22,0.10);
+  --border2:     rgba(28,26,22,0.18);
+  --green:       #2D6A4F;
+  --green-bg:    #D8F3DC;
+  --green-light: #EBF7ED;
+  --amber:       #92400E;
+  --amber-bg:    #FEF3C7;
+  --red:         #991B1B;
+  --red-bg:      #FEE2E2;
+  --blue:        #1E3A5F;
+  --blue-bg:     #DBEAFE;
+  --accent:      #3B5249;
+  --accent2:     #5C8374;
+  --radius:      16px;
+  --radius-sm:   10px;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.header {
+  width: 100%;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+.logo { display: flex; align-items: center; gap: 9px; }
+.logo-mark {
+  width: 32px; height: 32px;
+  background: var(--accent);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-mark svg { width: 17px; height: 17px; }
+.logo-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 20px;
+  letter-spacing: -0.3px;
+}
+.nav { display: flex; gap: 4px; }
+.nav-btn {
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.15s;
+}
+.nav-btn:hover { background: var(--surface2); color: var(--text); }
+.nav-btn.active { background: var(--accent); color: white; }
+
+.main {
+  width: 100%;
+  max-width: 740px;
+  padding: 44px 20px 80px;
+  flex: 1;
+}
+
+.screen { display: none; animation: fadeIn 0.25s ease; }
+.screen.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.hero { text-align: center; margin-bottom: 40px; }
+.hero h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 40px;
+  line-height: 1.12;
+  letter-spacing: -0.6px;
+  margin-bottom: 14px;
+}
+.hero h1 em { font-style: italic; color: var(--accent2); }
+.hero p { font-size: 16px; color: var(--text2); line-height: 1.6; max-width: 420px; margin: 0 auto; }
+
+.upload-zone {
+  background: var(--surface);
+  border: 2px dashed var(--border2);
+  border-radius: 22px;
+  padding: 60px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 20px;
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent2);
+  background: var(--green-light);
+  transform: scale(1.005);
+}
+.upload-icon {
+  width: 68px; height: 68px;
+  background: var(--surface2);
+  border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 20px;
+  transition: background 0.2s;
+}
+.upload-zone:hover .upload-icon { background: white; }
+.upload-icon svg { width: 34px; height: 34px; stroke: var(--accent); }
+.upload-zone h3 { font-size: 17px; font-weight: 500; margin-bottom: 8px; }
+.upload-zone p { font-size: 14px; color: var(--text2); margin-bottom: 22px; }
+.pick-file-btn {
+  display: inline-block;
+  background: var(--accent);
+  color: white;
+  padding: 11px 26px;
+  border-radius: 26px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  transition: background 0.15s, transform 0.15s;
+}
+.pick-file-btn:hover { background: #2D4039; transform: translateY(-1px); }
+input[type="file"] { display: none; }
+
+.divider {
+  display: flex; align-items: center; gap: 14px;
+  margin: 18px 0;
+  color: var(--text3);
+  font-size: 13px;
+}
+.divider::before, .divider::after {
+  content: ''; flex: 1;
+  height: 1px; background: var(--border);
+}
+.demo-btn {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 12px 20px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.demo-btn:hover { background: var(--surface2); }
+
+.processing-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  text-align: center;
+}
+.ocr-visual {
+  width: 110px; height: 140px;
+  background: var(--surface);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 32px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+}
+.ocr-lines { padding: 18px 14px; display: flex; flex-direction: column; gap: 7px; }
+.ocr-line {
+  height: 7px;
+  background: var(--surface3);
+  border-radius: 4px;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+.scan-beam {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--accent2) 50%, transparent 100%);
+  animation: beam 1.8s ease-in-out infinite;
+}
+@keyframes beam {
+  0% { top: 6%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { top: 94%; opacity: 0; }
+}
+.processing-wrap h2 { font-size: 22px; font-weight: 500; margin-bottom: 8px; }
+.processing-wrap .sub { font-size: 14px; color: var(--text2); }
+.proc-progress { margin-top: 28px; width: 260px; }
+.proc-bar-bg { height: 4px; background: var(--surface3); border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+.proc-bar-fill { height: 100%; background: var(--accent2); border-radius: 4px; width: 0%; transition: width 0.4s ease; }
+.proc-steps { display: flex; justify-content: space-between; gap: 4px; }
+.proc-step { font-size: 11px; color: var(--text3); display: flex; align-items: center; gap: 4px; transition: color 0.3s; }
+.proc-step.active { color: var(--text); font-weight: 500; }
+.proc-step.done { color: var(--green); }
+.proc-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 26px;
+  transition: color 0.15s;
+}
+.back-btn:hover { color: var(--text); }
+
+.summary-card {
+  background: var(--surface);
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  padding: 30px;
+  margin-bottom: 14px;
+}
+.summary-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 26px;
+  gap: 12px;
+}
+.provider-name { font-size: 16px; font-weight: 500; }
+.provider-sub { font-size: 13px; color: var(--text2); margin-top: 3px; }
+.status-pill { font-size: 11px; font-weight: 600; padding: 5px 14px; border-radius: 12px; white-space: nowrap; flex-shrink: 0; }
+.pill-unpaid { background: var(--amber-bg); color: var(--amber); }
+.pill-paid   { background: var(--green-bg); color: var(--green); }
+.pill-review { background: var(--red-bg);   color: var(--red); }
+
+.owe-label { font-size: 14px; color: var(--text2); margin-bottom: 4px; }
+.owe-amount { font-family: 'DM Serif Display', serif; font-size: 58px; letter-spacing: -1.5px; line-height: 1; color: var(--text); margin-bottom: 6px; }
+.owe-note { font-size: 13px; color: var(--text2); }
+
+.breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 26px;
+  padding-top: 26px;
+  border-top: 1px solid var(--border);
+}
+.bditem { text-align: center; }
+.bditem .val { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+.bditem .lbl { font-size: 12px; color: var(--text2); }
+.billed-val  { color: var(--text3); }
+.covered-val { color: var(--green); }
+
+.confidence-bar { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+.confidence-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.confidence-label { font-size: 12px; color: var(--text2); }
+.confidence-score { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 8px; }
+.conf-high { background: var(--green-bg); color: var(--green); }
+.conf-mid  { background: var(--amber-bg); color: var(--amber); }
+.conf-low  { background: var(--red-bg); color: var(--red); }
+.conf-track { height: 4px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+.conf-fill.high { background: var(--green); }
+.conf-fill.mid  { background: #D97706; }
+.conf-fill.low  { background: var(--red); }
+.conf-warn { font-size: 12px; color: var(--amber); margin-top: 8px; display: none; }
+.conf-warn.show { display: block; }
+
+.card {
+  background: var(--surface);
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  padding: 26px 28px;
+  margin-bottom: 14px;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 16px;
+}
+.explanation-body { font-size: 15px; line-height: 1.75; color: var(--text); }
+.explanation-body p + p { margin-top: 10px; }
+
+.ai-explain-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 10px 22px;
+  border-radius: 24px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ai-explain-btn:hover { background: var(--green-light); border-color: var(--accent2); }
+.ai-explain-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.ai-result { margin-top: 16px; padding: 18px; background: var(--green-light); border-radius: 14px; border: 1px solid rgba(45,106,79,0.18); font-size: 14px; line-height: 1.75; display: none; }
+.ai-result.show { display: block; }
+.ai-result-tag { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--green); margin-bottom: 10px; }
+
+.line-items-card { background: var(--surface); border-radius: 22px; border: 1px solid var(--border); overflow: hidden; margin-bottom: 14px; }
+.line-items-card .section-label { padding: 22px 26px 0; margin-bottom: 14px; }
+.li-row { display: flex; align-items: center; gap: 14px; padding: 14px 26px; border-top: 1px solid var(--border); }
+.li-code { font-size: 11px; font-family: monospace; background: var(--surface2); padding: 3px 8px; border-radius: 5px; color: var(--text2); white-space: nowrap; }
+.li-info { flex: 1; }
+.li-name { font-size: 14px; }
+.li-amt  { font-size: 14px; font-weight: 500; white-space: nowrap; }
+
+.action-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px; }
+.action-tile {
+  border: 1.5px solid var(--border2);
+  border-radius: 18px;
+  padding: 20px 16px;
+  cursor: pointer;
+  transition: all 0.18s;
+  background: transparent;
+  font-family: 'DM Sans', sans-serif;
+  text-align: center;
+}
+.action-tile:hover { border-color: var(--accent2); background: var(--green-light); transform: translateY(-2px); }
+.action-tile.primary { background: var(--accent); border-color: var(--accent); }
+.action-tile.primary:hover { background: #2D4039; border-color: #2D4039; transform: translateY(-2px); }
+.tile-icon { font-size: 26px; display: block; margin-bottom: 10px; }
+.tile-title { font-size: 14px; font-weight: 500; display: block; margin-bottom: 4px; color: var(--text); }
+.tile-desc { font-size: 12px; color: var(--text2); display: block; }
+.action-tile.primary .tile-title,
+.action-tile.primary .tile-desc { color: white; }
+.action-tile.primary .tile-desc { color: rgba(255,255,255,0.7); }
+
+.panel { margin-top: 14px; padding: 20px; border-radius: 14px; display: none; }
+.panel.show { display: block; }
+.plan-panel { background: var(--blue-bg); border: 1px solid rgba(30,58,95,0.14); }
+.dispute-panel { background: var(--amber-bg); border: 1px solid rgba(146,64,14,0.18); }
+
+.plan-options { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.plan-tile {
+  flex: 1; min-width: 80px;
+  background: white;
+  border: 1.5px solid rgba(30,58,95,0.18);
+  border-radius: 14px;
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'DM Sans', sans-serif;
+}
+.plan-tile:hover, .plan-tile.sel { border-color: var(--blue); background: var(--blue-bg); }
+.plan-mo-num { font-size: 22px; font-weight: 600; color: var(--blue); display: block; }
+.plan-mo-lbl { font-size: 11px; color: var(--text2); display: block; }
+.plan-mo-amt { font-size: 13px; font-weight: 500; display: block; margin-top: 6px; color: var(--text); }
+
+.dispute-label { font-size: 12px; font-weight: 600; color: var(--amber); margin-bottom: 12px; }
+.dispute-select, .dispute-textarea {
+  width: 100%;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  border: 1px solid rgba(146,64,14,0.2);
+  border-radius: 10px;
+  padding: 9px 13px;
+  background: white;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+.dispute-textarea { height: 80px; resize: none; }
+.dispute-submit {
+  background: var(--amber);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 22px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dispute-submit:hover { background: #78330B; }
+
+.history-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.history-top h2 { font-size: 22px; font-weight: 500; }
+
+.bill-cards { display: flex; flex-direction: column; gap: 12px; }
+.bill-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.bill-row:hover { border-color: var(--border2); transform: translateX(5px); }
+.bill-row-emoji { width: 44px; height: 44px; border-radius: 12px; background: var(--surface2); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.bill-row-info { flex: 1; }
+.bill-row-name { font-size: 15px; font-weight: 500; }
+.bill-row-date { font-size: 13px; color: var(--text2); margin-top: 2px; }
+.bill-row-right { text-align: right; }
+.bill-row-amt { font-size: 18px; font-weight: 500; }
+.bill-row-badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 10px; display: inline-block; margin-top: 4px; }
+
+.empty-state { text-align: center; padding: 70px 20px; color: var(--text2); }
+.empty-state svg { opacity: 0.3; }
+.empty-state p { margin-top: 12px; font-size: 15px; }
+.empty-state .sub { font-size: 13px; color: var(--text3); margin-top: 4px; }
+
+.dots { display: inline-flex; gap: 4px; align-items: center; }
+.dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent2); animation: blink 1.2s infinite; }
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+
+.toast {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--text);
+  color: white;
+  padding: 12px 22px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 999;
+  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+
+@media (max-width: 580px) {
+  .hero h1 { font-size: 30px; }
+  .owe-amount { font-size: 42px; }
+  .action-grid { grid-template-columns: 1fr; }
+  .breakdown { display: flex; justify-content: space-around; }
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1.5" y="1" width="11" height="15" rx="2" fill="rgba(255,255,255,0.2)" stroke="white" stroke-width="1.1"/>
+        <line x1="4" y1="5.5" x2="10" y2="5.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="4" y1="8.5" x2="10" y2="8.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
+        <line x1="4" y1="11.5" x2="7.5" y2="11.5" stroke="white" stroke-width="1.1" stroke-linecap="round"/>
+        <circle cx="13.5" cy="13.5" r="3" fill="#5C8374" stroke="white" stroke-width="1"/>
+        <path d="M12.5 13.5l.9.9 1.5-1.5" stroke="white" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <span class="logo-name">ClearScan</span>
+  </div>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="nav('upload', this)">Scan</button>
+    <button class="nav-btn" onclick="nav('history', this)">My Bills</button>
+  </nav>
+</header>
+
+<main class="main">
+
+  <!-- UPLOAD -->
+  <div id="screen-upload" class="screen active">
+    <div class="hero">
+      <h1>Your bill, <em>understood</em>.</h1>
+      <p>Upload a medical bill and get a plain-English breakdown of exactly what you owe — and why.</p>
+    </div>
+    <div class="upload-zone" id="uploadZone">
+      <div class="upload-icon">
+        <svg viewBox="0 0 34 34" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 3H9a3 3 0 0 0-3 3v22a3 3 0 0 0 3 3h16a3 3 0 0 0 3-3V11L21 3z"/>
+          <polyline points="21 3 21 11 29 11"/>
+          <line x1="17" y1="16" x2="17" y2="24"/>
+          <line x1="13" y1="20" x2="21" y2="20"/>
+        </svg>
+      </div>
+      <h3>Drop your bill here</h3>
+      <p>JPG, PNG, or PDF · Up to 10 MB</p>
+      <button class="pick-file-btn" onclick="document.getElementById('fileInput').click()">Choose File</button>
+      <input type="file" id="fileInput" accept="image/*,.pdf" onchange="handleFile(event)">
+    </div>
+    <div class="divider"><span>or try a demo</span></div>
+    <button class="demo-btn" onclick="loadDemo()">✨ Load sample hospital bill</button>
+  </div>
+
+  <!-- PROCESSING -->
+  <div id="screen-processing" class="screen">
+    <div class="processing-wrap">
+      <div class="ocr-visual">
+        <div class="ocr-lines">
+          <div class="ocr-line" style="width:82%"></div>
+          <div class="ocr-line" style="width:60%;animation-delay:.1s"></div>
+          <div class="ocr-line" style="width:92%;animation-delay:.2s"></div>
+          <div class="ocr-line" style="width:48%;animation-delay:.3s"></div>
+          <div class="ocr-line" style="width:76%;animation-delay:.4s"></div>
+          <div class="ocr-line" style="width:88%;animation-delay:.5s"></div>
+          <div class="ocr-line" style="width:54%;animation-delay:.15s"></div>
+          <div class="ocr-line" style="width:70%;animation-delay:.35s"></div>
+          <div class="ocr-line" style="width:64%;animation-delay:.25s"></div>
+        </div>
+        <div class="scan-beam"></div>
+      </div>
+      <h2 id="procTitle">Reading your bill…</h2>
+      <p class="sub" id="procSub">Running OCR on your document</p>
+      <div class="proc-progress">
+        <div class="proc-bar-bg"><div class="proc-bar-fill" id="procBar"></div></div>
+        <div class="proc-steps">
+          <div class="proc-step active" id="ps1"><div class="proc-dot"></div>OCR</div>
+          <div class="proc-step" id="ps2"><div class="proc-dot"></div>Parse</div>
+          <div class="proc-step" id="ps3"><div class="proc-dot"></div>Explain</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="screen-results" class="screen">
+    <button class="back-btn" onclick="nav('upload', document.querySelector('.nav-btn'))">← New scan</button>
+
+    <div class="summary-card">
+      <div class="summary-top">
+        <div>
+          <div class="provider-name" id="r-provider">—</div>
+          <div class="provider-sub" id="r-sub">—</div>
+        </div>
+        <div class="status-pill pill-unpaid" id="r-statuspill">Unpaid</div>
+      </div>
+      <div class="owe-label">You owe</div>
+      <div class="owe-amount" id="r-amount">—</div>
+      <div class="owe-note" id="r-note">—</div>
+      <div class="breakdown">
+        <div class="bditem"><div class="val billed-val" id="r-billed">—</div><div class="lbl">Total billed</div></div>
+        <div class="bditem"><div class="val covered-val" id="r-covered">—</div><div class="lbl">Insurance covered</div></div>
+        <div class="bditem"><div class="val" id="r-owe">—</div><div class="lbl">Your share</div></div>
+      </div>
+      <div class="confidence-bar">
+        <div class="confidence-header">
+          <span class="confidence-label">OCR confidence</span>
+          <span class="confidence-score" id="r-conf-label">—</span>
+        </div>
+        <div class="conf-track"><div class="conf-fill" id="r-conf-fill" style="width:0%"></div></div>
+        <div class="conf-warn" id="r-conf-warn">Low confidence — verify this amount directly with your provider before paying.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label">What this bill means</div>
+      <div class="explanation-body" id="r-explanation">—</div>
+      <button class="ai-explain-btn" id="aiBtn" onclick="getAIExplain()">✦ Explain this like I'm 12</button>
+      <div class="ai-result" id="aiResult">
+        <div class="ai-result-tag">✦ Simplified by AI</div>
+        <div id="aiText"></div>
+      </div>
+    </div>
+
+    <div class="line-items-card">
+      <div class="section-label">Charge breakdown</div>
+      <div id="r-lineitems"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-label">What do you want to do?</div>
+      <div class="action-grid">
+        <button class="action-tile primary" onclick="doAction('pay')">
+          <span class="tile-icon">💳</span>
+          <span class="tile-title">Pay now</span>
+          <span class="tile-desc">Go to provider portal</span>
+        </button>
+        <button class="action-tile" onclick="doAction('plan')">
+          <span class="tile-icon">📆</span>
+          <span class="tile-title">Payment plan</span>
+          <span class="tile-desc">Break into payments</span>
+        </button>
+        <button class="action-tile" onclick="doAction('dispute')">
+          <span class="tile-icon">❓</span>
+          <span class="tile-title">Question it</span>
+          <span class="tile-desc">Something looks off</span>
+        </button>
+      </div>
+      <div class="panel plan-panel" id="planPanel">
+        <div class="section-label" style="color:var(--blue);margin-bottom:10px;">Estimated payment plan</div>
+        <p style="font-size:13px;color:var(--text2)">Non-binding estimate — contact your provider to set up an official plan.</p>
+        <div class="plan-options" id="planOptions"></div>
+      </div>
+      <div class="panel dispute-panel" id="disputePanel">
+        <div class="dispute-label">Tell us what looks wrong</div>
+        <label style="font-size:13px;display:block;margin-bottom:6px;">Reason</label>
+        <select class="dispute-select">
+          <option>I don't recognize this charge</option>
+          <option>Insurance should cover more</option>
+          <option>I already paid this</option>
+          <option>Wrong service date or provider</option>
+          <option>Other</option>
+        </select>
+        <label style="font-size:13px;display:block;margin-bottom:6px;">Details (optional)</label>
+        <textarea class="dispute-textarea" placeholder="Describe the issue…"></textarea>
+        <button class="dispute-submit" onclick="submitDispute()">Log for review</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="screen-history" class="screen">
+    <div class="history-top"><h2>My Bills</h2></div>
+    <div class="bill-cards" id="historyList"></div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── Runtime config fetched from /api/config (keeps keys server-side) ──── */
+let CONFIG = {
+  SUPABASE_URL:  null,
+  SUPABASE_ANON: null,
+};
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      CONFIG.SUPABASE_URL  = data.supabaseUrl  || null;
+      CONFIG.SUPABASE_ANON = data.supabaseAnon || null;
+    }
+  } catch(e) {
+    console.warn('Could not load config from /api/config, using localStorage only.', e);
+  }
+}
+
+let db = null;
+let memBills = [];
+let currentBill = null;
+let activePanel = null;
+
+async function init() {
+  await loadConfig();
+  memBills = JSON.parse(localStorage.getItem('clearscan_bills') || '[]');
+  if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON) {
+    db = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON);
+  }
+  setupDrag();
+}
+window.addEventListener('DOMContentLoaded', init);
+
+/* ── Navigation ─────────────────────────────────────────────────────────── */
+function nav(screenName, el) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + screenName).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  if (el && el.classList && el.classList.contains('nav-btn')) el.classList.add('active');
+  if (screenName === 'history') renderHistory();
+}
+
+/* ── File handling ──────────────────────────────────────────────────────── */
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+  processFile(file);
+}
+
+function setupDrag() {
+  const zone = document.getElementById('uploadZone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+  });
+}
+
+/* ── OCR pipeline ───────────────────────────────────────────────────────── */
+async function processFile(file) {
+  showProcessing('Reading your bill…', 'Preprocessing image for accuracy', 5);
+  let rawText = '';
+  if (file.type === 'application/pdf') {
+    rawText = await ocrPdf(file);
+  } else {
+    rawText = await ocrImage(file);
+  }
+  setProc(2, 'Parsing charges…', 'Using AI to extract financial fields', 55);
+  const parsed = await parseBillWithAPI(rawText);
+  setProc(3, 'Building summary…', 'Generating plain-English explanation', 85);
+  await delay(300);
+  const bill = buildBillObject(parsed, file.name);
+  await saveBill(bill);
+  setBarWidth(100);
+  await delay(300);
+  currentBill = bill;
+  renderResults(bill);
+  nav('results');
+}
+
+async function preprocessImage(file) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.max(1, Math.min(3, 2000 / Math.max(img.width, img.height)));
+      const canvas = document.createElement('canvas');
+      canvas.width  = img.width  * scale;
+      canvas.height = img.height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const gray = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+        const contrast = Math.min(255, Math.max(0, (gray - 128) * 1.5 + 128));
+        const sharpened = contrast > 160 ? Math.min(255, contrast * 1.1) : contrast * 0.85;
+        data[i] = data[i+1] = data[i+2] = sharpened;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve(canvas);
+    };
+    img.src = url;
+  });
+}
+
+async function ocrImage(file) {
+  setBarWidth(8);
+  const canvas = await preprocessImage(file);
+  setBarWidth(15);
+  try {
+    const result = await Tesseract.recognize(canvas, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') setBarWidth(Math.round(15 + m.progress * 35));
+      },
+      tessedit_pageseg_mode: '6',
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,/$:%-# ',
+    });
+    return result.data.text;
+  } catch(e) {
+    const url = URL.createObjectURL(file);
+    try {
+      const result = await Tesseract.recognize(url, 'eng');
+      return result.data.text;
+    } finally { URL.revokeObjectURL(url); }
+  }
+}
+
+async function ocrPdf(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const bytes = new Uint8Array(reader.result);
+      let text = '';
+      try {
+        const raw = new TextDecoder('latin1').decode(bytes);
+        const matches = raw.match(/\(([^)]{2,200})\)/g) || [];
+        text = matches.map(m => m.slice(1,-1)).join(' ');
+        text = text.replace(/\\n/g,' ').replace(/\\r/g,' ').replace(/\\\\/g,'\\');
+      } catch(e) { text = ''; }
+      resolve(text.length > 100 ? text : 'PDF_TEXT_NOT_EXTRACTABLE');
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* ── Parse via Cloudflare Worker (API key stays server-side) ─────────────── */
+async function parseBillWithAPI(rawText) {
+  if (!rawText || rawText === 'PDF_TEXT_NOT_EXTRACTABLE') return fallbackParse('');
+  try {
+    const res = await fetch('/api/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: rawText.slice(0, 4000) }),
+    });
+    if (!res.ok) throw new Error('Parse API error: ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    return {
+      amount:      data.amountDue      ?? 0,
+      billed:      data.totalBilled    ?? data.amountDue ?? 0,
+      covered:     data.insurancePaid  ?? 0,
+      provider:    data.provider       ?? 'Unknown Provider',
+      dueDate:     data.dueDate        ?? 'See bill',
+      serviceDate: data.serviceDate    ?? 'See bill',
+      account:     data.account        ?? 'N/A',
+      lineItems:   (data.lineItems     || []).slice(0, 8),
+      confidence:  data.confidence     ?? 50,
+      rawText:     rawText.slice(0, 3000),
+    };
+  } catch(e) {
+    console.warn('Parse API failed, using regex fallback:', e);
+    return fallbackParse(rawText);
+  }
+}
+
+/* ── Regex fallback ─────────────────────────────────────────────────────── */
+function fallbackParse(text) {
+  const t = text.replace(/\s+/g, ' ');
+  function extract(patterns, src) {
+    for (const p of patterns) { const m = src.match(p); if (m && m[1]) return m[1].trim().replace(/,/g, ''); }
+    return null;
+  }
+  function toFloat(str) { if (!str) return null; return parseFloat(str.replace(/,/g,'')) || null; }
+  const amountRaw  = extract([/(?:amount\s*due|total\s*due|patient\s*(?:responsibility|balance)|balance\s*due)[^$\d]{0,30}\$?\s*([\d,]+\.?\d{0,2})/i], t);
+  const billedRaw  = extract([/(?:total\s*(?:charges?|billed)|amount\s*billed)[^$\d]{0,20}\$?\s*([\d,]+\.?\d{0,2})/i], t);
+  const insuredRaw = extract([/(?:insurance\s*(?:paid|payment)|plan\s*paid)[^$\d]{0,20}\$?\s*([\d,]+\.?\d{0,2})/i], t);
+  const providerRaw = extract([/(?:from|provider|hospital|clinic)[:\s]+([A-Z][^\n,]{3,50})/i], t);
+  const dueDateRaw  = extract([/(?:due\s*(?:date|by)|pay\s*by)[:\s]+([A-Za-z]+ \d{1,2},?\s*\d{4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i], t);
+  const svcDateRaw  = extract([/(?:date\s*of\s*service|service\s*date)[:\s]+([A-Za-z]+ \d{1,2},?\s*\d{4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i], t);
+  const accountRaw  = extract([/(?:account|acct|invoice)[#\s:]+([A-Z0-9\-]{3,20})/i], t);
+  const amount  = toFloat(amountRaw);
+  const billed  = toFloat(billedRaw);
+  const insured = toFloat(insuredRaw);
+  let confidence = 0;
+  if (amount  != null) confidence += 35;
+  if (billed  != null) confidence += 20;
+  if (insured != null) confidence += 15;
+  if (providerRaw) confidence += 15;
+  if (dueDateRaw || svcDateRaw) confidence += 15;
+  return {
+    amount: amount ?? 0,
+    billed: billed ?? (amount && insured ? +(amount + insured).toFixed(2) : amount ?? 0),
+    covered: insured ?? (billed && amount ? +(billed - amount).toFixed(2) : 0),
+    provider: providerRaw ?? 'Unknown Provider',
+    dueDate: dueDateRaw ?? 'See bill',
+    serviceDate: svcDateRaw ?? 'See bill',
+    account: accountRaw ?? 'N/A',
+    lineItems: [],
+    confidence,
+    rawText: t.slice(0, 3000),
+  };
+}
+
+function buildBillObject(parsed, filename) {
+  const id = 'bill_' + Date.now();
+  const note = parsed.covered > 0
+    ? 'After insurance · Out-of-pocket responsibility'
+    : 'No insurance adjustment detected · Verify with provider';
+  let status = 'unpaid';
+  if (parsed.amount === 0) status = 'paid';
+  else if (parsed.confidence < 50) status = 'review';
+  return {
+    id, provider: parsed.provider, serviceDate: parsed.serviceDate,
+    dueDate: parsed.dueDate, account: parsed.account,
+    amount: parsed.amount, billed: parsed.billed, covered: parsed.covered,
+    status, note, confidence: parsed.confidence,
+    lineItems: parsed.lineItems, rawText: parsed.rawText,
+    filename: filename || 'bill', scannedAt: new Date().toISOString(), emoji: '🏥',
+  };
+}
+
+/* ── Persistence ─────────────────────────────────────────────────────────── */
+async function saveBill(bill) {
+  if (db) {
+    try { await db.from('bills').insert([bill]); return; } catch(e) { console.warn('Supabase save failed', e); }
+  }
+  memBills.unshift(bill);
+  try { localStorage.setItem('clearscan_bills', JSON.stringify(memBills.slice(0, 50))); } catch(e) {}
+}
+
+async function loadBills() {
+  if (db) {
+    try {
+      const { data } = await db.from('bills').select('*').order('scannedAt', { ascending: false }).limit(50);
+      return data || [];
+    } catch(e) { return memBills; }
+  }
+  return memBills;
+}
+
+/* ── Render results ─────────────────────────────────────────────────────── */
+function renderResults(b) {
+  document.getElementById('r-provider').textContent = b.provider;
+  document.getElementById('r-sub').textContent = `Service: ${b.serviceDate} · Account #${b.account}`;
+  document.getElementById('r-amount').textContent = '$' + b.amount.toFixed(2);
+  document.getElementById('r-billed').textContent = '$' + b.billed.toFixed(2);
+  document.getElementById('r-covered').textContent = '$' + b.covered.toFixed(2);
+  document.getElementById('r-owe').textContent = '$' + b.amount.toFixed(2);
+  document.getElementById('r-note').textContent = b.note;
+  const pill = document.getElementById('r-statuspill');
+  pill.className = 'status-pill pill-' + b.status;
+  pill.textContent = b.status === 'review' ? 'Needs review' : capitalize(b.status);
+  const conf = b.confidence;
+  const confClass = conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
+  const confLabel = conf >= 70 ? 'High' : conf >= 40 ? 'Moderate' : 'Low';
+  document.getElementById('r-conf-fill').style.width = conf + '%';
+  document.getElementById('r-conf-fill').className = 'conf-fill ' + confClass;
+  const ls = document.getElementById('r-conf-label');
+  ls.textContent = confLabel + ' (' + conf + '%)';
+  ls.className = 'confidence-score conf-' + confClass;
+  const warn = document.getElementById('r-conf-warn');
+  if (conf < 50) warn.classList.add('show'); else warn.classList.remove('show');
+  document.getElementById('r-explanation').innerHTML = buildExplanation(b);
+  const li = document.getElementById('r-lineitems');
+  if (b.lineItems && b.lineItems.length) {
+    li.innerHTML = b.lineItems.map(item => `
+      <div class="li-row">
+        <div class="li-code">${item.code || ''}</div>
+        <div class="li-info"><div class="li-name">${item.desc}</div></div>
+        <div class="li-amt">$${(item.amount || 0).toFixed(2)}</div>
+      </div>`).join('');
+  } else {
+    li.innerHTML = `<div class="li-row" style="color:var(--text2);font-size:14px;">No itemized charges detected — request an itemized bill from your provider.</div>`;
+  }
+  document.getElementById('aiResult').classList.remove('show');
+  document.getElementById('aiText').innerHTML = '';
+  document.getElementById('aiBtn').disabled = false;
+  document.getElementById('aiBtn').innerHTML = '✦ Explain this like I\'m 12';
+  document.getElementById('planPanel').classList.remove('show');
+  document.getElementById('disputePanel').classList.remove('show');
+  activePanel = null;
+}
+
+function buildExplanation(b) {
+  const parts = [];
+  if (b.provider !== 'Unknown Provider') parts.push(`You received a bill from <strong>${b.provider}</strong>.`);
+  else parts.push(`You received a medical bill.`);
+  if (b.billed > 0 && b.covered > 0) {
+    parts.push(`Your provider billed a total of <strong>$${b.billed.toFixed(2)}</strong>. Your insurance covered <strong>$${b.covered.toFixed(2)}</strong> of that, leaving a patient responsibility of <strong>$${b.amount.toFixed(2)}</strong>.`);
+  } else if (b.amount > 0) {
+    parts.push(`The balance due is <strong>$${b.amount.toFixed(2)}</strong>.`);
+  } else {
+    parts.push(`This bill shows a <strong>$0.00 balance</strong> — it may be fully covered or already paid.`);
+  }
+  if (b.dueDate && b.dueDate !== 'See bill') parts.push(`Payment is due by <strong>${b.dueDate}</strong>.`);
+  if (b.confidence < 50) parts.push(`⚠️ Our confidence in the extracted numbers is low — please verify all amounts directly with your provider before paying.`);
+  return '<p>' + parts.join(' ') + '</p>';
+}
+
+/* ── AI explain (via server-side proxy) ──────────────────────────────────── */
+async function getAIExplain() {
+  const btn = document.getElementById('aiBtn');
+  const result = document.getElementById('aiResult');
+  const textDiv = document.getElementById('aiText');
+  const b = currentBill;
+  btn.disabled = true;
+  btn.innerHTML = `Thinking <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+  result.classList.add('show');
+  textDiv.innerHTML = `<span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>`;
+  try {
+    const res = await fetch('/api/explain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: b.provider, serviceDate: b.serviceDate,
+        billed: b.billed, covered: b.covered, amount: b.amount,
+        lineItems: b.lineItems,
+      }),
+    });
+    if (!res.ok) throw new Error('Explain API error: ' + res.status);
+    const data = await res.json();
+    const text = data.text || 'No response received.';
+    textDiv.innerHTML = text.split('\n').filter(p => p.trim()).map(p => `<p style="margin-bottom:10px;">${p}</p>`).join('');
+    btn.innerHTML = '✦ Explained ✓';
+  } catch(err) {
+    textDiv.innerHTML = `<span style="color:var(--red)">Could not connect. Try again.</span>`;
+    btn.disabled = false;
+    btn.innerHTML = '✦ Explain this like I\'m 12';
+    console.error(err);
+  }
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────────── */
+function doAction(type) {
+  const planPanel    = document.getElementById('planPanel');
+  const disputePanel = document.getElementById('disputePanel');
+  if (type === 'pay') { toast('Opening provider payment portal…'); return; }
+  if (type === 'plan') {
+    if (activePanel === 'plan') { planPanel.classList.remove('show'); activePanel = null; }
+    else { disputePanel.classList.remove('show'); planPanel.classList.add('show'); activePanel = 'plan'; renderPlan(); }
+    return;
+  }
+  if (type === 'dispute') {
+    if (activePanel === 'dispute') { disputePanel.classList.remove('show'); activePanel = null; }
+    else { planPanel.classList.remove('show'); disputePanel.classList.add('show'); activePanel = 'dispute'; }
+  }
+}
+
+function renderPlan() {
+  const amt = currentBill?.amount || 0;
+  document.getElementById('planOptions').innerHTML = [3,6,9,12].map((m,i) => `
+    <div class="plan-tile ${i===1?'sel':''}" onclick="selectPlan(this)">
+      <span class="plan-mo-num">${m}</span>
+      <span class="plan-mo-lbl">months</span>
+      <span class="plan-mo-amt">$${(amt/m).toFixed(2)}/mo</span>
+    </div>`).join('');
+}
+function selectPlan(el) { document.querySelectorAll('.plan-tile').forEach(t => t.classList.remove('sel')); el.classList.add('sel'); }
+function submitDispute() {
+  document.getElementById('disputePanel').innerHTML = `<div style="color:var(--amber);font-size:14px;font-weight:500;">✓ Dispute logged. Follow up with your provider in 7 days.</div>`;
+  toast('Dispute logged');
+}
+
+/* ── History ─────────────────────────────────────────────────────────────── */
+async function renderHistory() {
+  const list = document.getElementById('historyList');
+  list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text3);font-size:14px;">Loading…</div>`;
+  const bills = await loadBills();
+  if (!bills.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="4" width="28" height="36" rx="4"/>
+          <line x1="15" y1="16" x2="33" y2="16"/>
+          <line x1="15" y1="22" x2="33" y2="22"/>
+          <line x1="15" y1="28" x2="24" y2="28"/>
+        </svg>
+        <p>No bills scanned yet</p>
+        <div class="sub">Scan your first bill to get started</div>
+      </div>`;
+    return;
+  }
+  list.innerHTML = bills.map(b => `
+    <div class="bill-row" onclick="openHistoryBill('${b.id}')">
+      <div class="bill-row-emoji">${b.emoji || '🏥'}</div>
+      <div class="bill-row-info">
+        <div class="bill-row-name">${b.provider}</div>
+        <div class="bill-row-date">Scanned ${formatDate(b.scannedAt)}</div>
+      </div>
+      <div class="bill-row-right">
+        <div class="bill-row-amt">$${(b.amount||0).toFixed(2)}</div>
+        <div class="bill-row-badge pill-${b.status}">${b.status==='review'?'Needs review':capitalize(b.status||'unpaid')}</div>
+      </div>
+    </div>`).join('');
+  window._historyBills = bills;
+}
+
+async function openHistoryBill(id) {
+  const bills = window._historyBills || await loadBills();
+  const b = bills.find(x => x.id === id);
+  if (!b) return;
+  currentBill = b;
+  renderResults(b);
+  nav('results');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+}
+
+/* ── Demo ─────────────────────────────────────────────────────────────────── */
+function loadDemo() {
+  const demo = {
+    id: 'demo_' + Date.now(),
+    provider: 'General Medical Center',
+    serviceDate: 'March 14, 2025',
+    dueDate: 'April 30, 2025',
+    account: '8821-A',
+    amount: 742.18,
+    billed: 2340.00,
+    covered: 1597.82,
+    status: 'unpaid',
+    note: 'After insurance · Out-of-pocket responsibility',
+    confidence: 88,
+    emoji: '🏥',
+    lineItems: [
+      { code: '99285', desc: 'Emergency Dept Visit – high complexity', amount: 1200.00 },
+      { code: '71046', desc: 'Chest X-ray (2 views)', amount: 420.00 },
+      { code: '85025', desc: 'Complete blood count (CBC)', amount: 380.00 },
+      { code: '96374', desc: 'IV infusion, initial hour', amount: 340.00 },
+    ],
+    rawText: 'demo',
+    scannedAt: new Date().toISOString(),
+  };
+  showProcessingFake(demo);
+}
+
+function showProcessingFake(bill) {
+  nav('processing');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  resetProcSteps();
+  const steps = [
+    { id: 'ps1', delay: 0,    pct: 30, title: 'Reading your bill…',  sub: 'Running OCR on document' },
+    { id: 'ps2', delay: 900,  pct: 65, title: 'Parsing charges…',    sub: 'Extracting financial fields' },
+    { id: 'ps3', delay: 1700, pct: 90, title: 'Building summary…',   sub: 'Generating explanation' },
+  ];
+  steps.forEach((s, i) => {
+    setTimeout(() => {
+      if (i > 0) document.getElementById(steps[i-1].id).classList.replace('active','done');
+      document.getElementById(s.id).classList.add('active');
+      setBarWidth(s.pct);
+      document.getElementById('procTitle').textContent = s.title;
+      document.getElementById('procSub').textContent   = s.sub;
+    }, s.delay);
+  });
+  setTimeout(() => {
+    document.getElementById('ps3').classList.replace('active','done');
+    setBarWidth(100);
+    setTimeout(() => { currentBill = bill; renderResults(bill); nav('results'); }, 300);
+  }, 2400);
+}
+
+/* ── Processing UI ───────────────────────────────────────────────────────── */
+const procStepIds = ['ps1','ps2','ps3'];
+function showProcessing(title, sub, pct) {
+  nav('processing');
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  resetProcSteps();
+  document.getElementById('ps1').classList.add('active');
+  setBarWidth(pct);
+  document.getElementById('procTitle').textContent = title;
+  document.getElementById('procSub').textContent   = sub;
+}
+function setProc(step, title, sub, pct) {
+  const prev = procStepIds[step - 2];
+  const curr = procStepIds[step - 1];
+  if (prev) document.getElementById(prev).classList.replace('active', 'done');
+  if (curr) { document.getElementById(curr).classList.remove('done'); document.getElementById(curr).classList.add('active'); }
+  setBarWidth(pct);
+  document.getElementById('procTitle').textContent = title;
+  document.getElementById('procSub').textContent   = sub;
+}
+function setBarWidth(pct) { document.getElementById('procBar').style.width = Math.min(100, pct) + '%'; }
+function resetProcSteps() { procStepIds.forEach(id => { const el = document.getElementById(id); el.classList.remove('active', 'done'); }); setBarWidth(0); }
+
+/* ── Utils ───────────────────────────────────────────────────────────────── */
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function formatDate(iso) {
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch(e) { return iso; }
+}
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+</script>
+</body>
+</html>

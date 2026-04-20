@@ -1,0 +1,12 @@
+{
+  "name": "clearscan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Medical bill scanner — plain-English breakdowns powered by OCR + AI",
+  "scripts": {
+    "dev": "npx wrangler pages dev public --compatibility-date=2024-01-01"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
