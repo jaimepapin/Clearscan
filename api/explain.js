@@ -1,11 +1,10 @@
 /**
  * Vercel / Cloudflare Serverless Function: POST /api/explain
- * Uses Groq API (not OpenRouter) for fast, free LLM inference.
+ * Uses Groq API instead of OpenRouter.
  *
- * Required env var:  GROQ_API_KEY
- * Optional env var:  GROQ_MODEL  (default: llama-3.1-8b-instant)
+ * Required env var: GROQ_API_KEY
+ * Optional env var: GROQ_MODEL (default: llama-3.1-8b-instant)
  */
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -15,7 +14,7 @@ export default async function handler(req, res) {
   const GROQ_MODEL   = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
   if (!GROQ_API_KEY) {
-    return res.status(503).json({ error: 'GROQ_API_KEY not configured in environment variables' });
+    return res.status(503).json({ error: 'GROQ_API_KEY not configured' });
   }
 
   const { provider, serviceDate, billed, covered, amount, lineItems } = req.body || {};
@@ -64,7 +63,6 @@ No jargon. No bullet points. Just plain friendly paragraphs. Be warm and calm.`;
 
     if (!upstream.ok) {
       const errText = await upstream.text();
-      console.error('Groq error:', upstream.status, errText);
       return res.status(502).json({ error: `Groq API error: ${upstream.status}`, detail: errText });
     }
 
@@ -83,7 +81,6 @@ No jargon. No bullet points. Just plain friendly paragraphs. Be warm and calm.`;
     if (e.name === 'AbortError') {
       return res.status(504).json({ error: 'Request timed out after 25s' });
     }
-    console.error('explain.js error:', e);
     return res.status(500).json({ error: String(e) });
   }
 }
