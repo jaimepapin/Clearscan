@@ -7,7 +7,7 @@ Upload a medical bill image or PDF and get a plain-English breakdown of what you
 ## Project Structure
 
 ```
-clearscan/
+clearscan/ 
 ├── public/
 │   └── index.html          ← The entire frontend (single HTML file)
 ├── functions/
