@@ -1,25 +1,26 @@
 /**
- * Vercel Serverless Function: POST /api/parse
- * Proxies bill OCR text to OpenRouter. API key stays server-side.
+ * Vercel / Cloudflare Serverless Function: POST /api/parse
+ * Uses Groq API instead of OpenRouter.
+ *
+ * Required env var: GROQ_API_KEY
+ * Optional env var: GROQ_MODEL (default: llama-3.1-8b-instant)
  */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const OPENROUTER_KEY   = process.env.OPENROUTER_KEY;
-  const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'meta-llama/llama-3-70b-instruct';
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const GROQ_MODEL   = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
-  if (!OPENROUTER_KEY) {
-    return res.status(503).json({ error: 'OPENROUTER_KEY not configured' });
+  if (!GROQ_API_KEY) {
+    return res.status(503).json({ error: 'GROQ_API_KEY not configured' });
   }
 
   const rawText = (req.body?.text || '').slice(0, 4000);
 
   const prompt = `You are a medical billing expert. Extract structured data from this medical bill OCR text.
-
 Return ONLY valid JSON, no explanation, no markdown, no backticks. Just the raw JSON object.
-
 Extract these fields exactly:
 {
   "provider": "hospital or clinic name, or null",
@@ -34,7 +35,6 @@ Extract these fields exactly:
   ],
   "confidence": number between 0 and 100
 }
-
 Rules:
 - amountDue = what the patient actually owes right now
 - totalBilled = full amount before insurance
@@ -43,40 +43,54 @@ Rules:
 - If a field is not clearly present, use null
 - confidence: 90+ all fields found, 70-89 most found, 40-69 some found, <40 mostly unreadable
 - lineItems: only include if itemized charges are visible
-
 Bill text:
 ${rawText}`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+
   try {
-    const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENROUTER_KEY}`,
-        'HTTP-Referer': 'https://clearscan.app',
-        'X-Title': 'ClearScan',
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: OPENROUTER_MODEL,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 1000,
+        model:       GROQ_MODEL,
+        messages:    [{ role: 'user', content: prompt }],
+        max_tokens:  1000,
         temperature: 0.1,
       }),
     });
 
+    clearTimeout(timeout);
+
     if (!upstream.ok) {
       const errText = await upstream.text();
-      return res.status(502).json({ error: 'LLM error: ' + upstream.status, detail: errText });
+      return res.status(502).json({ error: 'Groq API error: ' + upstream.status, detail: errText });
     }
 
     const data = await upstream.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const text = data?.choices?.[0]?.message?.content || '';
     const clean = text.replace(/```json|```/gi, '').trim();
-    const parsed = JSON.parse(clean);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(clean);
+    } catch (parseErr) {
+      return res.status(502).json({ error: 'Failed to parse LLM response as JSON', raw: clean });
+    }
 
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json(parsed);
+
   } catch (e) {
+    clearTimeout(timeout);
+    if (e.name === 'AbortError') {
+      return res.status(504).json({ error: 'Request timed out after 25s' });
+    }
     return res.status(500).json({ error: String(e) });
   }
 }
